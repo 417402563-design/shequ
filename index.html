@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧社区数字化租赁服务平台</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus@2.8.8/dist/index.css">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://unpkg.com/vue@3.5.13/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus@2.8.8/dist/index.full.min.js"></script>
+    <script src="https://unpkg.com/element-plus@2.8.8/dist/locale/zh-cn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+</head>
+<body>
+<div id="app" v-cloak>
+    <!-- ================= 登录页 ================= -->
+    <div class="login-wrap" v-if="!currentUser">
+        <div class="login-card">
+            <h2>🏠 智慧社区数字化租赁服务平台</h2>
+            <p class="sub">Spring Boot + Vue · 内置H2数据库</p>
+            <el-input v-model="loginForm.username" placeholder="用户名" size="large" style="margin-bottom:12px"></el-input>
+            <el-input v-model="loginForm.password" type="password" placeholder="密码" size="large"
+                      show-password style="margin-bottom:16px" @keyup.enter="doLogin"></el-input>
+            <el-button type="primary" size="large" style="width:100%" :loading="loginLoading" @click="doLogin">登 录</el-button>
+            <div class="login-tip">
+                演示账号（密码 123456）：
+                <el-link type="primary" @click="fillAccount('agent1')">中介 agent1</el-link>
+                <el-link type="primary" @click="fillAccount('landlord1')">房东 landlord1</el-link>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 主布局 ================= -->
+    <el-container v-else class="layout">
+        <el-aside width="210px" class="aside">
+            <div class="logo">🏠 智慧社区租赁</div>
+            <el-menu :default-active="page" background-color="#001529" text-color="#a6adb4"
+                     active-text-color="#ffffff" @select="switchPage">
+                <el-menu-item index="stats">📊 统计分析</el-menu-item>
+                <el-menu-item index="users">👥 用户管理</el-menu-item>
+                <el-menu-item index="houses">🏘️ 房源管理</el-menu-item>
+                <el-menu-item index="tenants">🧑‍💼 租客管理</el-menu-item>
+                <el-menu-item index="contracts">📝 合同管理</el-menu-item>
+                <el-menu-item index="bills">💰 费用管理</el-menu-item>
+            </el-menu>
+        </el-aside>
+        <el-container>
+            <el-header class="header">
+                <span class="page-title">{{ pageTitle }}</span>
+                <div class="header-right">
+                    <el-badge :value="unreadCount" :hidden="unreadCount===0" class="bell">
+                        <el-popover placement="bottom-end" :width="380" trigger="click">
+                            <template #reference>
+                                <span class="bell-icon" title="消息通知">🔔</span>
+                            </template>
+                            <div class="notif-head">
+                                <b>消息通知</b>
+                                <el-button size="small" text type="primary" @click="readAll">全部已读</el-button>
+                            </div>
+                            <el-empty v-if="notifications.length===0" description="暂无通知" :image-size="60"/>
+                            <div v-for="n in notifications" :key="n.id" class="notif-item" :class="{unread: n.readFlag===0}">
+                                <div class="notif-title">{{ n.title }}
+                                    <span class="notif-time">{{ fmtTime(n.createTime) }}</span></div>
+                                <div class="notif-content">{{ n.content }}</div>
+                            </div>
+                        </el-popover>
+                    </el-badge>
+                    <el-tag effect="plain">{{ roleLabel(currentUser.role) }}</el-tag>
+                    <span class="uname">{{ currentUser.name }}</span>
+                    <el-button size="small" @click="logout">退出</el-button>
+                </div>
+            </el-header>
+
+            <el-main class="main">
+                <!-- ================= 统计分析 ================= -->
+                <div v-show="page==='stats'">
+                    <el-row :gutter="14">
+                        <el-col :span="6" v-for="c in statCards" :key="c.label">
+                            <el-card shadow="hover" class="stat-card">
+                                <div class="stat-value" :style="{color:c.color}">{{ c.value }}</div>
+                                <div class="stat-label">{{ c.label }}</div>
+                            </el-card>
+                        </el-col>
+                    </el-row>
+                    <el-row :gutter="14" style="margin-top:14px">
+                        <el-col :span="14"><el-card shadow="never"><template #header>近12个月租金收入报表</template>
+                            <div id="incomeChart" style="height:320px"></div></el-card></el-col>
+                        <el-col :span="10"><el-card shadow="never"><template #header>房源出租率状态分布</template>
+                            <div id="statusChart" style="height:320px"></div></el-card></el-col>
+                    </el-row>
+                    <el-row :gutter="14" style="margin-top:14px">
+                        <el-col :span="10"><el-card shadow="never"><template #header>热门区域浏览量分析</template>
+                            <div id="areaChart" style="height:300px"></div></el-card></el-col>
+                        <el-col :span="14"><el-card shadow="never"><template #header>区域统计明细</template>
+                            <el-table :data="areaStats" size="small" max-height="300">
+                                <el-table-column prop="area" label="区域"/>
+                                <el-table-column prop="houseCount" label="房源数" width="80"/>
+                                <el-table-column prop="rentedCount" label="已出租" width="80"/>
+                                <el-table-column label="平均租金" width="100">
+                                    <template #default="s">￥{{ s.row.avgRent }}</template>
+                                </el-table-column>
+                                <el-table-column prop="views" label="总浏览量" width="90"/>
+                                <el-table-column label="热度" min-width="120">
+                                    <template #default="s">
+                                        <el-progress :percentage="heatPercent(s.row.views)" :stroke-width="10"/>
+                                    </template>
+                                </el-table-column>
+                            </el-table></el-card></el-col>
+                    </el-row>
+                </div>
+
+                <!-- ================= 用户管理 ================= -->
+                <div v-show="page==='users'">
+                    <el-card shadow="never" class="toolbar-card">
+                        <el-select v-model="userQuery.role" placeholder="全部角色" clearable style="width:140px"
+                                   @change="loadUsers">
+                            <el-option label="中介" value="AGENT"/><el-option label="房东" value="LANDLORD"/>
+                            <el-option label="租客" value="TENANT"/>
+                        </el-select>
+                        <el-input v-model="userQuery.keyword" placeholder="搜索姓名/用户名" clearable
+                                  style="width:200px" @keyup.enter="loadUsers"/>
+                        <el-button type="primary" @click="loadUsers">查询</el-button>
+                        <el-button @click="openUserDialog()">新增账号</el-button>
+                    </el-card>
+                    <el-table :data="users" border stripe>
+                        <el-table-column prop="username" label="用户名" width="130"/>
+                        <el-table-column prop="name" label="姓名" width="100"/>
+                        <el-table-column label="角色" width="90">
+                            <template #default="s">
+                                <el-tag :type="{AGENT:'warning',LANDLORD:'success',TENANT:'primary'}[s.row.role]">
+                                    {{ roleLabel(s.row.role) }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="phone" label="手机号" width="130"/>
+                        <el-table-column prop="email" label="邮箱" min-width="170"/>
+                        <el-table-column label="状态" width="80">
+                            <template #default="s">
+                                <el-tag :type="s.row.status===1?'success':'danger'">{{ s.row.status===1?'启用':'禁用' }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="创建时间" width="160">
+                            <template #default="s">{{ fmtTime(s.row.createTime) }}</template>
+                        </el-table-column>
+                        <el-table-column label="操作" width="130">
+                            <template #default="s">
+                                <el-button size="small" @click="openUserDialog(s.row)">编辑</el-button>
+                                <el-popconfirm title="确认删除该账号？" @confirm="del('/api/users/'+s.row.id)">
+                                    <template #reference><el-button size="small" type="danger">删除</el-button></template>
+                                </el-popconfirm>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                    <el-dialog v-model="userDialog" :title="userForm.id?'编辑账号':'新增账号'" width="480">
+                        <el-form :model="userForm" label-width="80px">
+                            <el-form-item label="用户名"><el-input v-model="userForm.username"/></el-form-item>
+                            <el-form-item label="密码">
+                                <el-input v-model="userForm.password" :placeholder="userForm.id?'留空则不修改':'必填'"/>
+                            </el-form-item>
+                            <el-form-item label="姓名"><el-input v-model="userForm.name"/></el-form-item>
+                            <el-form-item label="角色">
+                                <el-select v-model="userForm.role" style="width:100%">
+                                    <el-option label="中介" value="AGENT"/><el-option label="房东" value="LANDLORD"/>
+                                    <el-option label="租客账号" value="TENANT"/>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="手机号"><el-input v-model="userForm.phone"/></el-form-item>
+                            <el-form-item label="邮箱"><el-input v-model="userForm.email"/></el-form-item>
+                            <el-form-item label="状态">
+                                <el-switch v-model="userForm.status" :active-value="1" :inactive-value="0"
+                                           active-text="启用" inactive-text="禁用"/>
+                            </el-form-item>
+                        </el-form>
+                        <template #footer>
+                            <el-button @click="userDialog=false">取消</el-button>
+                            <el-button type="primary" @click="saveUser">保存</el-button>
+                        </template>
+                    </el-dialog>
+                </div>
+
+                <!-- ================= 房源管理 ================= -->
+                <div v-show="page==='houses'">
+                    <el-card shadow="never" class="toolbar-card">
+                        <el-select v-model="houseQuery.status" placeholder="全部状态" clearable style="width:130px"
+                                   @change="loadHouses">
+                            <el-option label="空置可租" value="ON"/><el-option label="已出租" value="RENTED"/>
+                            <el-option label="已下架" value="OFF"/>
+                        </el-select>
+                        <el-select v-model="houseQuery.area" placeholder="全部区域" clearable style="width:130px"
+                                   @change="loadHouses">
+                            <el-option v-for="a in areas" :key="a" :label="a" :value="a"/>
+                        </el-select>
+                        <el-input v-model="houseQuery.keyword" placeholder="搜索标题/地址" clearable
+                                  style="width:200px" @keyup.enter="loadHouses"/>
+                        <el-button type="primary" @click="loadHouses">查询</el-button>
+                        <el-button @click="openHouseDialog()">录入房源</el-button>
+                    </el-card>
+                    <el-table :data="houses" border stripe>
+                        <el-table-column prop="title" label="房源标题" min-width="190"/>
+                        <el-table-column prop="area" label="区域" width="85"/>
+                        <el-table-column prop="layout" label="户型" width="90"/>
+                        <el-table-column label="楼层" width="80">
+                            <template #default="s">{{ s.row.floor }}/{{ s.row.totalFloors }}层</template>
+                        </el-table-column>
+                        <el-table-column label="月租金" width="95">
+                            <template #default="s">￥{{ s.row.rent }}</template>
+                        </el-table-column>
+                        <el-table-column prop="ownerName" label="房东" width="80"/>
+                        <el-table-column label="状态" width="90">
+                            <template #default="s">
+                                <el-tag :type="{ON:'success',RENTED:'warning',OFF:'info'}[s.row.status]">
+                                    {{ houseStatusLabel(s.row.status) }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="viewCount" label="浏览量" width="80"/>
+                        <el-table-column label="操作" width="250">
+                            <template #default="s">
+                                <el-button size="small" @click="openHouseDialog(s.row)">编辑</el-button>
+                                <el-button size="small" v-if="s.row.status==='ON'" @click="put('/api/houses/'+s.row.id+'/off')">下架</el-button>
+                                <el-button size="small" v-if="s.row.status==='OFF'" type="success"
+                                           @click="put('/api/houses/'+s.row.id+'/status?status=ON')">上架</el-button>
+                                <el-button size="small" v-if="s.row.status==='ON'" type="warning"
+                                           @click="put('/api/houses/'+s.row.id+'/status?status=RENTED')">标为已租</el-button>
+                                <el-popconfirm title="确认删除该房源？" @confirm="del('/api/houses/'+s.row.id)">
+                                    <template #reference><el-button size="small" type="danger">删除</el-button></template>
+                                </el-popconfirm>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                    <el-dialog v-model="houseDialog" :title="houseForm.id?'编辑房源':'录入房源'" width="620">
+                        <el-form :model="houseForm" label-width="90px">
+                            <el-form-item label="房源标题" required><el-input v-model="houseForm.title"/></el-form-item>
+                            <el-form-item label="详细地址" required><el-input v-model="houseForm.address"/></el-form-item>
+                            <el-row>
+                                <el-col :span="12"><el-form-item label="所属区域">
+                                    <el-select v-model="houseForm.area" filterable allow-create style="width:90%">
+                                        <el-option v-for="a in areas" :key="a" :label="a" :value="a"/>
+                                    </el-select></el-form-item></el-col>
+                                <el-col :span="12"><el-form-item label="户型">
+                                    <el-input v-model="houseForm.layout" placeholder="如：两室一厅" style="width:90%"/>
+                                </el-form-item></el-col>
+                            </el-row>
+                            <el-row>
+                                <el-col :span="12"><el-form-item label="所在楼层">
+                                    <el-input-number v-model="houseForm.floor" :min="1" style="width:90%"/>
+                                </el-form-item></el-col>
+                                <el-col :span="12"><el-form-item label="总楼层">
+                                    <el-input-number v-model="houseForm.totalFloors" :min="1" style="width:90%"/>
+                                </el-form-item></el-col>
+                            </el-row>
+                            <el-row>
+                                <el-col :span="12"><el-form-item label="月租金(元)">
+                                    <el-input-number v-model="houseForm.rent" :min="0" style="width:90%"/>
+                                </el-form-item></el-col>
+                                <el-col :span="12"><el-form-item label="押金(元)">
+                                    <el-input-number v-model="houseForm.deposit" :min="0" style="width:90%"/>
+                                </el-form-item></el-col>
+                            </el-row>
+                            <el-form-item label="房东">
+                                <el-select v-model="houseForm.ownerId" style="width:100%" @change="onOwnerChange">
+                                    <el-option v-for="l in landlordUsers" :key="l.id" :label="l.name+'（'+l.username+'）'" :value="l.id"/>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="配套设施"><el-input v-model="houseForm.facilities" placeholder="空调,冰箱,洗衣机,宽带..."/></el-form-item>
+                            <el-form-item label="房源描述"><el-input type="textarea" :rows="3" v-model="houseForm.description"/></el-form-item>
+                        </el-form>
+                        <template #footer>
+                            <el-button @click="houseDialog=false">取消</el-button>
+                            <el-button type="primary" @click="saveHouse">保存</el-button>
+                        </template>
+                    </el-dialog>
+                </div>
+
+                <!-- ================= 租客管理 ================= -->
+                <div v-show="page==='tenants'">
+                    <el-card shadow="never" class="toolbar-card">
+                        <el-input v-model="tenantQuery.keyword" placeholder="搜索姓名/电话" clearable
+                                  style="width:200px" @keyup.enter="loadTenants"/>
+                        <el-button type="primary" @click="loadTenants">查询</el-button>
+                        <el-button @click="openTenantDialog()">登记租客</el-button>
+                    </el-card>
+                    <el-table :data="tenants" border stripe>
+                        <el-table-column prop="name" label="姓名" width="90"/>
+                        <el-table-column prop="gender" label="性别" width="60"/>
+                        <el-table-column prop="age" label="年龄" width="60"/>
+                        <el-table-column prop="idCard" label="身份证号" min-width="170"/>
+                        <el-table-column prop="phone" label="手机号" width="125"/>
+                        <el-table-column prop="occupation" label="职业" width="110"/>
+                        <el-table-column label="信用评估" width="190">
+                            <template #default="s">
+                                <el-progress :percentage="s.row.creditScore||0" :stroke-width="12"
+                                             :color="creditColor(s.row.creditScore)"/>
+                                <el-tag size="small" :type="creditTag(s.row.creditLevel)" style="margin-top:2px">
+                                    {{ s.row.creditLevel }}（{{ s.row.creditScore }}分）</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="remark" label="备注" min-width="140"/>
+                        <el-table-column label="操作" width="240">
+                            <template #default="s">
+                                <el-button size="small" @click="openTenantDialog(s.row)">编辑</el-button>
+                                <el-button size="small" type="primary" @click="openViewingDialog(s.row)">登记看房</el-button>
+                                <el-button size="small" @click="showViewings(s.row)">看房记录</el-button>
+                                <el-popconfirm title="确认删除该租客？" @confirm="del('/api/tenants/'+s.row.id)">
+                                    <template #reference><el-button size="small" type="danger">删除</el-button></template>
+                                </el-popconfirm>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                    <!-- 租客编辑弹窗 -->
+                    <el-dialog v-model="tenantDialog" :title="tenantForm.id?'编辑租客':'登记租客信息'" width="560">
+                        <el-form :model="tenantForm" label-width="90px">
+                            <el-row>
+                                <el-col :span="12"><el-form-item label="姓名" required>
+                                    <el-input v-model="tenantForm.name" style="width:90%"/></el-form-item></el-col>
+                                <el-col :span="12"><el-form-item label="性别">
+                                    <el-radio-group v-model="tenantForm.gender">
+                                        <el-radio value="男">男</el-radio><el-radio value="女">女</el-radio>
+                                    </el-radio-group></el-form-item></el-col>
+                            </el-row>
+                            <el-row>
+                                <el-col :span="12"><el-form-item label="身份证号">
+                                    <el-input v-model="tenantForm.idCard" style="width:90%"/></el-form-item></el-col>
+                                <el-col :span="12"><el-form-item label="手机号">
+                                    <el-input v-model="tenantForm.phone" style="width:90%"/></el-form-item></el-col>
+                            </el-row>
+                            <el-row>
+                                <el-col :span="12"><el-form-item label="年龄">
+                                    <el-input-number v-model="tenantForm.age" :min="18" :max="80" style="width:90%"/>
+                                </el-form-item></el-col>
+                                <el-col :span="12"><el-form-item label="职业">
+                                    <el-input v-model="tenantForm.occupation" style="width:90%"/></el-form-item></el-col>
+                            </el-row>
+                            <el-form-item label="信用评分">
+                                <el-slider v-model="tenantForm.creditScore" :min="0" :max="100" show-input
+                                           style="width:92%"/>
+                                <div class="form-tip">≥90优秀　≥75良好　≥60一般　&lt;60较差（系统自动评级）</div>
+                            </el-form-item>
+                            <el-form-item label="备注"><el-input type="textarea" :rows="2" v-model="tenantForm.remark"/></el-form-item>
+                        </el-form>
+                        <template #footer>
+                            <el-button @click="tenantDialog=false">取消</el-button>
+                            <el-button type="primary" @click="saveTenant">保存</el-button>
+                        </template>
+                    </el-dialog>
+                    <!-- 看房登记弹窗 -->
+                    <el-dialog v-model="viewingDialog" title="登记看房记录" width="520">
+                        <el-form :model="viewingForm" label-width="90px">
+                            <el-form-item label="租客">{{ viewingForm.tenantName }}</el-form-item>
+                            <el-form-item label="看房房源" required>
+                                <el-select v-model="viewingForm.houseId" filterable style="width:100%">
+                                    <el-option v-for="h in houses" :key="h.id"
+                                               :label="h.title+'（￥'+h.rent+'/月）'" :value="h.id"/>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="看房时间" required>
+                                <el-date-picker v-model="viewingForm.viewTime" type="datetime"
+                                                value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%"/>
+                            </el-form-item>
+                            <el-form-item label="承租意向">
+                                <el-radio-group v-model="viewingForm.intention">
+                                    <el-radio :value="1">有意向</el-radio><el-radio :value="0">无意向</el-radio>
+                                </el-radio-group>
+                            </el-form-item>
+                            <el-form-item label="看房反馈">
+                                <el-input type="textarea" :rows="3" v-model="viewingForm.feedback"/>
+                            </el-form-item>
+                        </el-form>
+                        <template #footer>
+                            <el-button @click="viewingDialog=false">取消</el-button>
+                            <el-button type="primary" @click="saveViewing">提交</el-button>
+                        </template>
+                    </el-dialog>
+                    <!-- 看房记录列表弹窗 -->
+                    <el-dialog v-model="viewingListDialog" :title="currentTenant.name+' 的看房记录'" width="720">
+                        <el-table :data="viewingList" size="small" border max-height="360">
+                            <el-table-column prop="houseTitle" label="房源" min-width="180"/>
+                            <el-table-column label="看房时间" width="160">
+                                <template #default="s">{{ fmtTime(s.row.viewTime) }}</template>
+                            </el-table-column>
+                            <el-table-column label="意向" width="80">
+                                <template #default="s">
+                                    <el-tag size="small" :type="s.row.intention===1?'success':'info'">
+                                        {{ s.row.intention===1?'有意向':'无意向' }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="feedback" label="反馈" min-width="180"/>
+                            <el-table-column label="操作" width="70">
+                                <template #default="s">
+                                    <el-button size="small" type="danger" text @click="del('/api/viewings/'+s.row.id).then(loadViewings)">删除</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                    </el-dialog>
+                </div>
+
+                <!-- ================= 合同管理 ================= -->
+                <div v-show="page==='contracts'">
+                    <el-alert v-if="expiringContracts.length" type="warning" show-icon :closable="false"
+                              style="margin-bottom:12px"
+                              :title="'⚠️ 有 '+expiringContracts.length+' 份合同将在30天内到期：' + expiringContracts.map(c=>c.contractNo+'（'+c.tenantName+'，'+c.endDate+'到期）').join('；')"/>
+                    <el-card shadow="never" class="toolbar-card">
+                        <el-select v-model="contractQuery.status" placeholder="全部状态" clearable style="width:130px"
+                                   @change="loadContracts">
+                            <el-option label="待签约" value="DRAFT"/><el-option label="生效中" value="SIGNED"/>
+                            <el-option label="已到期" value="EXPIRED"/><el-option label="已退租" value="TERMINATED"/>
+                        </el-select>
+                        <el-input v-model="contractQuery.keyword" placeholder="搜索编号/租客/地址" clearable
+                                  style="width:200px" @keyup.enter="loadContracts"/>
+                        <el-button type="primary" @click="loadContracts">查询</el-button>
+                        <el-button @click="openContractDialog">模板生成合同</el-button>
+                    </el-card>
+                    <el-table :data="contracts" border stripe>
+                        <el-table-column prop="contractNo" label="合同编号" width="165"/>
+                        <el-table-column prop="houseAddress" label="房源地址" min-width="170"/>
+                        <el-table-column prop="tenantName" label="租客" width="75"/>
+                        <el-table-column prop="landlordName" label="房东" width="75"/>
+                        <el-table-column label="租期" width="200">
+                            <template #default="s">{{ s.row.startDate }} 至 {{ s.row.endDate }}</template>
+                        </el-table-column>
+                        <el-table-column label="月租/押金" width="110">
+                            <template #default="s">￥{{ s.row.rent }} / ￥{{ s.row.deposit }}</template>
+                        </el-table-column>
+                        <el-table-column label="付款" width="70">
+                            <template #default="s">{{ cycleLabel(s.row.payCycle) }}</template>
+                        </el-table-column>
+                        <el-table-column label="状态" width="90">
+                            <template #default="s">
+                                <el-tag :type="{DRAFT:'info',SIGNED:'success',EXPIRED:'warning',TERMINATED:'danger'}[s.row.status]">
+                                    {{ contractStatusLabel(s.row.status) }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="操作" width="300">
+                            <template #default="s">
+                                <el-button size="small" @click="previewContract(s.row)">模板</el-button>
+                                <el-button size="small" type="primary" v-if="s.row.status==='DRAFT'"
+                                           @click="put('/api/contracts/'+s.row.id+'/sign?signMethod=ONLINE').then(afterSign)">电子签约</el-button>
+                                <el-button size="small" type="warning" v-if="s.row.status==='SIGNED'"
+                                           @click="openTerminateDialog(s.row)">退租</el-button>
+                                <el-popconfirm title="按付款周期生成分期账单并推送？" v-if="s.row.status==='SIGNED'"
+                                               @confirm="post('/api/bills/generate/'+s.row.id).then(loadBills)">
+                                    <template #reference><el-button size="small">生成账单</el-button></template>
+                                </el-popconfirm>
+                                <el-popconfirm title="确认删除该合同？" v-if="s.row.status!=='SIGNED'"
+                                               @confirm="del('/api/contracts/'+s.row.id)">
+                                    <template #reference><el-button size="small" type="danger">删除</el-button></template>
+                                </el-popconfirm>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                    <!-- 合同生成弹窗 -->
+                    <el-dialog v-model="contractDialog" title="合同模板生成" width="560">
+                        <el-form :model="contractForm" label-width="90px">
+                            <el-form-item label="选择房源" required>
+                                <el-select v-model="contractForm.houseId" filterable style="width:100%"
+                                           @change="onContractHouseChange">
+                                    <el-option v-for="h in availableHouses" :key="h.id"
+                                               :label="h.title+'（'+h.area+'　￥'+h.rent+'/月）'" :value="h.id"/>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="选择租客" required>
+                                <el-select v-model="contractForm.tenantId" filterable style="width:100%">
+                                    <el-option v-for="t in tenants" :key="t.id"
+                                               :label="t.name+'（'+t.creditLevel+t.creditScore+'分）'" :value="t.id"/>
+                                </el-select>
+                            </el-form-item>
+                            <el-row>
+                                <el-col :span="12"><el-form-item label="起租日" required>
+                                    <el-date-picker v-model="contractForm.startDate" type="date"
+                                                    value-format="YYYY-MM-DD" style="width:90%"/></el-form-item></el-col>
+                                <el-col :span="12"><el-form-item label="到期日" required>
+                                    <el-date-picker v-model="contractForm.endDate" type="date"
+                                                    value-format="YYYY-MM-DD" style="width:90%"/></el-form-item></el-col>
+                            </el-row>
+                            <el-row>
+                                <el-col :span="12"><el-form-item label="付款周期">
+                                    <el-select v-model="contractForm.payCycle" style="width:90%">
+                                        <el-option label="月付" :value="1"/><el-option label="季付" :value="3"/>
+                                        <el-option label="半年付" :value="6"/><el-option label="年付" :value="12"/>
+                                    </el-select></el-form-item></el-col>
+                                <el-col :span="12"><el-form-item label="中介经办">
+                                    <el-input v-model="contractForm.agentName" style="width:90%"/></el-form-item></el-col>
+                            </el-row>
+                            <el-row>
+                                <el-col :span="12"><el-form-item label="月租(元)">
+                                    <el-input-number v-model="contractForm.rent" :min="0" style="width:90%"/></el-form-item></el-col>
+                                <el-col :span="12"><el-form-item label="押金(元)">
+                                    <el-input-number v-model="contractForm.deposit" :min="0" style="width:90%"/></el-form-item></el-col>
+                            </el-row>
+                        </el-form>
+                        <template #footer>
+                            <el-button @click="contractDialog=false">取消</el-button>
+                            <el-button type="primary" @click="saveContract">生成待签合同</el-button>
+                        </template>
+                    </el-dialog>
+                    <!-- 合同全文预览 -->
+                    <el-dialog v-model="contentDialog" title="合同模板预览" width="680">
+                        <pre class="contract-text">{{ contractContent }}</pre>
+                        <template #footer><el-button @click="contentDialog=false">关闭</el-button></template>
+                    </el-dialog>
+                    <!-- 退租处理 -->
+                    <el-dialog v-model="terminateDialog" title="办理退租" width="420">
+                        <p>合同：{{ terminateRow && terminateRow.contractNo }}</p>
+                        <el-form label-width="90px">
+                            <el-form-item label="押金处理">
+                                <el-select v-model="depositHandle" style="width:100%">
+                                    <el-option label="全额退还" value="REFUNDED"/>
+                                    <el-option label="扣除（损坏赔偿）" value="DEDUCTED"/>
+                                    <el-option label="抵扣违约金" value="FORFEIT"/>
+                                </el-select>
+                            </el-form-item>
+                        </el-form>
+                        <template #footer>
+                            <el-button @click="terminateDialog=false">取消</el-button>
+                            <el-button type="danger" @click="doTerminate">确认退租</el-button>
+                        </template>
+                    </el-dialog>
+                </div>
+
+                <!-- ================= 费用管理 ================= -->
+                <div v-show="page==='bills'">
+                    <el-card shadow="never" class="toolbar-card">
+                        <el-select v-model="billQuery.status" placeholder="全部状态" clearable style="width:130px"
+                                   @change="loadBills">
+                            <el-option label="待缴费" value="UNPAID"/><el-option label="已缴费" value="PAID"/>
+                            <el-option label="已作废" value="CANCELLED"/>
+                        </el-select>
+                        <el-select v-model="billQuery.type" placeholder="全部类型" clearable style="width:130px"
+                                   @change="loadBills">
+                            <el-option label="租金" value="RENT"/><el-option label="押金" value="DEPOSIT"/>
+                            <el-option label="水费" value="WATER"/><el-option label="电费" value="ELECTRIC"/>
+                            <el-option label="物业费" value="PROPERTY"/>
+                        </el-select>
+                        <el-button type="primary" @click="loadBills">查询</el-button>
+                        <el-button @click="openBillDialog">手动新增账单</el-button>
+                        <span class="bill-sum">待缴合计：￥{{ unpaidSum }}</span>
+                    </el-card>
+                    <el-table :data="bills" border stripe>
+                        <el-table-column prop="contractNo" label="合同编号" width="160"/>
+                        <el-table-column prop="tenantName" label="租客" width="80"/>
+                        <el-table-column label="类型" width="85">
+                            <template #default="s">
+                                <el-tag size="small" :type="{RENT:'primary',DEPOSIT:'warning',WATER:'info',ELECTRIC:'info',PROPERTY:'info'}[s.row.type]">
+                                    {{ billTypeLabel(s.row.type) }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="金额" width="100">
+                            <template #default="s"><b>￥{{ s.row.amount }}</b></template>
+                        </el-table-column>
+                        <el-table-column prop="dueDate" label="缴费截止日" width="115"/>
+                        <el-table-column label="状态" width="85">
+                            <template #default="s">
+                                <el-tag size="small" :type="{UNPAID:'danger',PAID:'success',CANCELLED:'info'}[s.row.status]">
+                                    {{ billStatusLabel(s.row.status) }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="缴费时间" width="150">
+                            <template #default="s">{{ s.row.payTime ? fmtTime(s.row.payTime) : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="押金处理" width="95">
+                            <template #default="s">
+                                <span v-if="s.row.type==='DEPOSIT' && s.row.depositHandle">{{ depositLabel(s.row.depositHandle) }}</span>
+                                <span v-else>-</span>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="remark" label="备注" min-width="140"/>
+                        <el-table-column label="操作" width="150">
+                            <template #default="s">
+                                <el-popconfirm title="确认登记为已缴费？" v-if="s.row.status==='UNPAID'"
+                                               @confirm="put('/api/bills/'+s.row.id+'/pay').then(afterPay)">
+                                    <template #reference><el-button size="small" type="success">收缴费</el-button></template>
+                                </el-popconfirm>
+                                <el-popconfirm title="确认删除该账单？" @confirm="del('/api/bills/'+s.row.id)">
+                                    <template #reference><el-button size="small" type="danger">删除</el-button></template>
+                                </el-popconfirm>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                    <!-- 手动新增账单 -->
+                    <el-dialog v-model="billDialog" title="新增账单（保存后推送给租客）" width="480">
+                        <el-form :model="billForm" label-width="100px">
+                            <el-form-item label="关联合同">
+                                <el-select v-model="billForm.contractId" filterable style="width:100%"
+                                           @change="onBillContractChange">
+                                    <el-option v-for="c in signedContracts" :key="c.id"
+                                               :label="c.contractNo+'（'+c.tenantName+'）'" :value="c.id"/>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="账单类型">
+                                <el-select v-model="billForm.type" style="width:100%">
+                                    <el-option label="水费" value="WATER"/><el-option label="电费" value="ELECTRIC"/>
+                                    <el-option label="物业费" value="PROPERTY"/><el-option label="租金" value="RENT"/>
+                                    <el-option label="其他费用" value="OTHER"/>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="金额(元)">
+                                <el-input-number v-model="billForm.amount" :min="0" style="width:100%"/>
+                            </el-form-item>
+                            <el-form-item label="缴费截止日">
+                                <el-date-picker v-model="billForm.dueDate" type="date" value-format="YYYY-MM-DD"
+                                                style="width:100%"/>
+                            </el-form-item>
+                            <el-form-item label="备注"><el-input v-model="billForm.remark"/></el-form-item>
+                        </el-form>
+                        <template #footer>
+                            <el-button @click="billDialog=false">取消</el-button>
+                            <el-button type="primary" @click="saveBill">生成并推送</el-button>
+                        </template>
+                    </el-dialog>
+                </div>
+            </el-main>
+        </el-container>
+    </el-container>
+</div>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+/* 智慧社区数字化租赁服务平台 样式 */
+[v-cloak] { display: none; }
+body { margin: 0; font-family: "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f2f5; }
+
+/* 登录页 */
+.login-wrap {
+    height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 60%, #4facfe 100%);
+}
+.login-card {
+    width: 400px; padding: 40px; border-radius: 12px; background: #fff;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+}
+.login-card h2 { margin: 0 0 6px; text-align: center; font-size: 21px; color: #1e3c72; }
+.login-card .sub { text-align: center; color: #999; font-size: 13px; margin-bottom: 24px; }
+.login-tip { margin-top: 16px; font-size: 12px; color: #999; text-align: center; }
+.login-tip .el-link { margin-left: 8px; font-size: 12px; }
+
+/* 布局 */
+.layout { height: 100vh; }
+.aside { background: #001529; }
+.aside .el-menu { border-right: none; }
+.logo { height: 60px; line-height: 60px; color: #fff; text-align: center; font-size: 17px; font-weight: bold; }
+.header { display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #e8e8e8; }
+.page-title { font-size: 17px; font-weight: bold; color: #303133; }
+.header-right { display: flex; align-items: center; gap: 10px; }
+.bell-icon { cursor: pointer; font-size: 20px; }
+.uname { font-weight: bold; }
+.main { overflow-y: auto; }
+
+/* 工具栏 */
+.toolbar-card { margin-bottom: 12px; }
+.toolbar-card .el-input, .toolbar-card .el-select { margin-right: 10px; }
+.bill-sum { float: right; line-height: 32px; color: #F56C6C; font-weight: bold; }
+
+/* 统计卡片 */
+.stat-card { text-align: center; margin-bottom: 0; }
+.stat-value { font-size: 22px; font-weight: bold; }
+.stat-label { color: #909399; font-size: 13px; margin-top: 6px; }
+
+/* 通知 */
+.notif-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.notif-item { padding: 8px 6px; border-bottom: 1px dashed #eee; }
+.notif-item.unread { background: #fdf6ec; }
+.notif-title { font-size: 13px; font-weight: bold; color: #303133; }
+.notif-time { float: right; font-size: 11px; color: #bbb; font-weight: normal; }
+.notif-content { font-size: 12px; color: #666; margin-top: 4px; line-height: 1.5; }
+
+/* 合同全文 */
+.contract-text {
+    white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.8;
+    background: #fafafa; padding: 16px; border: 1px solid #eee; border-radius: 6px;
+    max-height: 60vh; overflow-y: auto; margin: 0;
+}
+.form-tip { font-size: 12px; color: #a0a4ab; line-height: 1.6; }
